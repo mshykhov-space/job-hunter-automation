@@ -1,63 +1,37 @@
 # Job Hunter Automation
 
-Private-runtime execution layer for [Job Hunter](https://github.com/mshykhov/job-hunter).
-It runs deterministic health probes, a local Playwright-backed Browser Runner MCP,
-bounded Codex canaries, an opt-in synthetic recovery worker, and an opt-in private
-application-material compiler. Durable state, owner policy, and audit data remain
-in the Job Hunter API and PostgreSQL.
+Node.js runner for the bounded automation contract in [Job Hunter](https://github.com/mshykhov/job-hunter). The API remains the source of truth for leases, checkpoints, and audit state; this process holds no workflow database.
 
-The repository is public, but deployed access is single-owner. Browser profiles,
-cookies, Codex authentication, M2M credentials, prompts, model output, and captured
-page data are runtime secrets and are never committed.
+The included synthetic worker demonstrates lease claim, heartbeat, checkpoint, and restart recovery without browsing job sites or submitting applications. Browser-related adapters require separately provisioned credentials and a profile, so this repository is not a standalone application.
 
-## Status
+## Verify
 
-The runner imports the configured immutable candidate profile on startup and can compile a truthful
-ATS-aligned CV, short cover letter, and recruiter message from its approved private fact catalog.
-Generation starts only from an explicit owner request and uses the local Codex subscription login.
-Terra handles standard requests, while Sol runs only for an explicit owner-requested improvement.
-It never submits applications.
-
-The synthetic worker exercises the production lease and checkpoint protocol with
-three deterministic no-op steps. It has no browser or external-site capability.
-After a runner restart, the API fences the old generation and returns only the
-first incomplete step, so the runtime needs no local workflow database.
-
-## Development
-
-Requirements: Node.js 24 and npm.
+Requires Node.js 24.
 
 ```sh
 npm ci
 npm run verify
-npm run rulesync:verify
 ```
 
-Build output is written to `dist/`. See [the documentation map](docs/README.md) for
-architecture, operating guidance, exact contracts, and active plans.
+## Build and run
 
-The production launcher is installed as one hardened systemd service. Follow the
-[installation and recovery runbook](docs/runbooks/automation-service.md); the
-installer deliberately leaves the service disabled until M2M credentials and the
-dedicated Codex login are present.
-
-Runtime configuration is environment-only. The required variable names and safe
-local validation rules are documented in
-[Runtime configuration](docs/reference/runtime-configuration.md). Credentials and
-tokens remain in memory or protected deployment storage and must not be passed as
-command-line arguments.
-
-The API status and delegation endpoints are owner-only. The machine runner uses a
-separate short-lived M2M identity and cannot choose an owner or access the private
-web status page.
-
-## Agent configuration
-
-`.rulesync/` is the shared canonical source. `AGENTS.md`, `CLAUDE.md`, and target
-hook configuration are generated outputs.
+The runner must be configured against a compatible Job Hunter API before it can
+start. Follow the [runtime configuration](docs/reference/runtime-configuration.md)
+reference for the required API, machine-identity, browser-profile, and Codex
+variables, then use the [service runbook](docs/runbooks/automation-service.md)
+for installation and recovery.
 
 ```sh
-npm run rulesync:dry-run
-npm run rulesync:generate
-npm run rulesync:verify
+npm run build
+node dist/launcher.js
 ```
+
+The production runbook installs this command as a systemd service. Do not commit
+credentials, browser state, or generated application materials.
+
+See the [documentation map](docs/README.md) for architecture, runbooks, and
+reference material.
+
+## License
+
+[MIT](LICENSE)
