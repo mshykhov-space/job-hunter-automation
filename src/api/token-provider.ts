@@ -15,6 +15,13 @@ interface CachedToken {
   expiresAt: number;
 }
 
+export class TokenRequestError extends Error {
+  constructor(readonly status: number) {
+    super(`M2M token request failed with status ${String(status)}`);
+    this.name = "TokenRequestError";
+  }
+}
+
 export class AuthentikTokenProvider implements TokenProvider {
   private cached: CachedToken | undefined;
   private acquisition: Promise<CachedToken> | undefined;
@@ -54,10 +61,7 @@ export class AuthentikTokenProvider implements TokenProvider {
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: form,
     });
-    if (!response.ok)
-      throw new Error(
-        `M2M token request failed with status ${String(response.status)}`,
-      );
+    if (!response.ok) throw new TokenRequestError(response.status);
     const body: unknown = await response.json();
     if (!isTokenResponse(body))
       throw new Error("M2M token response is invalid");

@@ -1,8 +1,15 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { JobHunterClient } from "./api/job-hunter-client.js";
-import { AuthentikTokenProvider } from "./api/token-provider.js";
+import {
+  JobHunterClient,
+  JobHunterRequestError,
+  UnauthorizedError,
+} from "./api/job-hunter-client.js";
+import {
+  AuthentikTokenProvider,
+  TokenRequestError,
+} from "./api/token-provider.js";
 import { runCodexCanary } from "./codex/codex-probe.js";
 import { loadConfig } from "./config.js";
 import { CodexMaterialGenerator } from "./materials/codex-generator.js";
@@ -18,6 +25,34 @@ import { SyntheticWorkflowWorker } from "./workflows/synthetic-workflow-worker.j
 export interface SignalSource {
   on(signal: NodeJS.Signals, handler: () => void): void;
   off(signal: NodeJS.Signals, handler: () => void): void;
+}
+
+export type LauncherStage = "config" | "health" | "materials" | "workflow";
+
+type LauncherFailureCode =
+  | "AUTH_FAILED"
+  | "CONFIG_INVALID"
+  | "HEALTH_FAILED"
+  | "MATERIALS_FAILED"
+  | "NETWORK_FAILED"
+  | "UPSTREAM_REJECTED"
+  | "WORKFLOW_FAILED";
+
+interface LauncherFailureEvent {
+  event: "automation_launcher_failed";
+  stage: LauncherStage;
+  code: LauncherFailureCode;
+  status?: number;
+}
+
+class LauncherStageError extends Error {
+  constructor(
+    readonly stage: Exclude<LauncherStage, "config">,
+    override readonly cause: unknown,
+  ) {
+    super("Automation launcher stage failed", { cause });
+    this.name = "LauncherStageError";
+  }
 }
 
 const PROCESS_SIGNALS: SignalSource = {
@@ -141,13 +176,113 @@ export function createAutomationLauncher(
   return new AutomationLauncher(
     async (signal) => {
       await Promise.all([
-        ...(config.healthReportingEnabled ? [loop.run(signal)] : []),
-        ...(materialWorker === undefined ? [] : [materialWorker.run(signal)]),
-        ...(workflowWorker === undefined ? [] : [workflowWorker.run(signal)]),
+        ...(config.healthReportingEnabled
+          ? [runLauncherStage("health", () => loop.run(signal))]
+          : []),
+        ...(materialWorker === undefined
+          ? []
+          : [runLauncherStage("materials", () => materialWorker.run(signal))]),
+        ...(workflowWorker === undefined
+          ? []
+          : [runLauncherStage("workflow", () => workflowWorker.run(signal))]),
       ]);
     },
     () => Promise.resolve(),
   );
+}
+
+export async function runLauncherStage(
+  stage: Exclude<LauncherStage, "config">,
+  operation: () => Promise<void>,
+): Promise<void> {
+  try {
+    await operation();
+  } catch (error) {
+    throw new LauncherStageError(stage, error);
+  }
+}
+
+export async function runAutomationProcess(
+  create: () => Pick<AutomationLauncher, "start"> = createAutomationLauncher,
+  writeError: (line: string) => void = (line) => {
+    process.stderr.write(line);
+  },
+): Promise<void> {
+  try {
+    await create().start();
+  } catch (error) {
+    writeError(formatLauncherFailure(error));
+    throw error;
+  }
+}
+
+export function formatLauncherFailure(error: unknown): string {
+  return `${JSON.stringify(toLauncherFailureEvent(error))}\n`;
+}
+
+function toLauncherFailureEvent(error: unknown): LauncherFailureEvent {
+  const stage =
+    error instanceof LauncherStageError ? error.stage : ("config" as const);
+  const cause = error instanceof LauncherStageError ? error.cause : error;
+  const status = requestStatus(cause);
+  if (cause instanceof UnauthorizedError || isAuthenticationStatus(status))
+    return failure(stage, "AUTH_FAILED", status ?? 401);
+  if (status !== undefined) return failure(stage, "UPSTREAM_REJECTED", status);
+  if (isNetworkFailure(cause)) return failure(stage, "NETWORK_FAILED");
+  if (stage === "config") return failure(stage, "CONFIG_INVALID");
+  const code = {
+    health: "HEALTH_FAILED",
+    materials: "MATERIALS_FAILED",
+    workflow: "WORKFLOW_FAILED",
+  } as const;
+  return failure(stage, code[stage]);
+}
+
+function requestStatus(error: unknown): number | undefined {
+  if (
+    error instanceof JobHunterRequestError ||
+    error instanceof TokenRequestError
+  )
+    return error.status;
+  return undefined;
+}
+
+function isAuthenticationStatus(status: number | undefined): boolean {
+  return status === 401 || status === 403;
+}
+
+function isNetworkFailure(error: unknown): boolean {
+  const networkCodes = new Set([
+    "ECONNREFUSED",
+    "ECONNRESET",
+    "ENETUNREACH",
+    "ENOTFOUND",
+    "ETIMEDOUT",
+  ]);
+  let current = error;
+  for (let depth = 0; depth < 3 && current instanceof Error; depth += 1) {
+    if (
+      "code" in current &&
+      typeof current.code === "string" &&
+      networkCodes.has(current.code)
+    )
+      return true;
+    current = current.cause;
+  }
+  return false;
+}
+
+function failure(
+  stage: LauncherStage,
+  code: LauncherFailureCode,
+  status?: number,
+): LauncherFailureEvent {
+  return {
+    event: "automation_launcher_failed",
+    stage,
+    code,
+    ...(status === undefined ? {} : { status }),
+  };
 }
 
 function aborted(signal: AbortSignal): Promise<void> {
@@ -169,10 +304,7 @@ const CANARY_WORKSPACE = "/var/lib/job-hunter-automation/canary-workspace";
 
 const entrypoint = process.argv[1];
 if (entrypoint && import.meta.url === pathToFileURL(entrypoint).href) {
-  createAutomationLauncher()
-    .start()
-    .catch(() => {
-      process.stderr.write("Automation launcher failed\n");
-      process.exitCode = 1;
-    });
+  runAutomationProcess().catch(() => {
+    process.exitCode = 1;
+  });
 }

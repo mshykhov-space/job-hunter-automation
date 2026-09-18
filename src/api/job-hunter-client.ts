@@ -113,6 +113,13 @@ export class UnauthorizedError extends Error {
   }
 }
 
+export class JobHunterRequestError extends Error {
+  constructor(readonly status: number) {
+    super(`Job Hunter API request failed with status ${String(status)}`);
+    this.name = "JobHunterRequestError";
+  }
+}
+
 export class StaleGenerationError extends Error {
   constructor() {
     super("Job Hunter runner generation is stale");
@@ -346,10 +353,7 @@ export class JobHunterClient {
         throw new LeaseLostError();
       throw new StaleGenerationError();
     }
-    if (!response.ok)
-      throw new Error(
-        `Job Hunter API request failed with status ${String(response.status)}`,
-      );
+    if (!response.ok) throw new JobHunterRequestError(response.status);
     return response;
   }
 }

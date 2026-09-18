@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AutomationConfig } from "../../config.js";
-import { AuthentikTokenProvider } from "../token-provider.js";
+import {
+  AuthentikTokenProvider,
+  TokenRequestError,
+} from "../token-provider.js";
 
 const config = {
   tokenUrl: "https://auth.example.test/token",
@@ -16,6 +19,22 @@ const config = {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("AuthentikTokenProvider", () => {
+  it("preserves a bounded authentication status without exposing its body", async () => {
+    const provider = new AuthentikTokenProvider(
+      config,
+      vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(
+          new Response("private identity-provider body", { status: 401 }),
+        ),
+    );
+
+    await expect(provider.getAccessToken()).rejects.toMatchObject({
+      name: "TokenRequestError",
+      status: 401,
+    } satisfies Partial<TokenRequestError>);
+  });
+
   it("uses the exact M2M form and caches until expires_in minus 120 seconds", async () => {
     let now = 1_000_000;
     const fetchMock = vi
