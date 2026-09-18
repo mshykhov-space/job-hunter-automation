@@ -78,6 +78,14 @@ cookie, URL, prompt, model text, or browser content:
 sudo journalctl -u job-hunter-automation.service --since '-10 minutes' --no-pager
 ```
 
+A launcher failure is one JSON line with the fixed `event`, `stage`, and `code`
+fields and an optional HTTP `status`, for example
+`{"event":"automation_launcher_failed","stage":"health","code":"AUTH_FAILED","status":401}`.
+The stage is `config`, `health`, `materials`, or `workflow`; codes distinguish
+authentication, network, upstream HTTP, configuration, and worker failures. The
+line intentionally excludes exception messages, stacks, response bodies, command output, and
+request data.
+
 Use the owner-only Job Hunter Automation page to verify fresh LAUNCHER, API,
 DATABASE, CHROME, PLAYWRIGHT, BROWSER_MCP, JOB_HUNTER_MCP, and CODEX components.
 The first heartbeat runs preflight and canary; later heartbeats reuse snapshots until the

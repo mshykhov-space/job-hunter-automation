@@ -4,6 +4,7 @@ import type { HeartbeatRequest } from "../../domain/health.js";
 import { validGenerationInput } from "../../materials/__tests__/fixtures.js";
 import {
   JobHunterClient,
+  JobHunterRequestError,
   LeaseLostError,
   StaleGenerationError,
   UnauthorizedError,
@@ -76,6 +77,26 @@ describe("JobHunterClient", () => {
       UnauthorizedError,
     );
     expect(tokenProvider.invalidate).toHaveBeenCalledOnce();
+  });
+
+  it("preserves a bounded upstream status without exposing its body", async () => {
+    const client = new JobHunterClient(
+      "https://api.example.test",
+      tokenProvider,
+      vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(
+          new Response("private response body", { status: 503 }),
+        ),
+    );
+
+    const failure = client.sendHeartbeat(heartbeat);
+
+    await expect(failure).rejects.toMatchObject({
+      name: "JobHunterRequestError",
+      status: 503,
+    } satisfies Partial<JobHunterRequestError>);
+    await expect(failure).rejects.not.toThrow(/private response body/);
   });
 
   it("maps a conflict to stale generation without exposing response content", async () => {
