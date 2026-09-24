@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_url=https://github.com/mshykhov/job-hunter-automation.git
+repo_url=https://github.com/mshykhov-space/job-hunter-automation.git
 checkout_root=/usr/local/src/job-hunter-automation
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$script_dir/versions.env"

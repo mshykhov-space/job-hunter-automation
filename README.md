@@ -1,6 +1,6 @@
 # Job Hunter Automation
 
-Node.js runner for the bounded automation contract in [Job Hunter](https://github.com/mshykhov/job-hunter). The API remains the source of truth for leases, checkpoints, and audit state; this process holds no workflow database.
+Node.js runner for the bounded automation contract in [Job Hunter](https://github.com/mshykhov-space/job-hunter). The API remains the source of truth for leases, checkpoints, and audit state; this process holds no workflow database.
 
 The included synthetic worker demonstrates lease claim, heartbeat, checkpoint, and restart recovery without browsing job sites or submitting applications. Browser-related adapters require separately provisioned credentials and a profile, so this repository is not a standalone application.
 
